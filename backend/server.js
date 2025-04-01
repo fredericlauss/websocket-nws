@@ -6,6 +6,20 @@ const fastify = Fastify()
 const SERVER_ID = uuidv4()
 console.log(`Instance du serveur démarrée avec l'ID: ${SERVER_ID}`)
 
+const chaosConfig = {
+  enabled: true,
+  randomDisconnectProbability: 0.1,
+  maxLatency: 2000,
+  errorProbability: 0.1
+}
+
+// Fonction pour introduire un délai aléatoire
+const randomDelay = () => {
+  return new Promise(resolve => {
+    setTimeout(resolve, Math.random() * chaosConfig.maxLatency);
+  });
+}
+
 await fastify.register(websocket, {
   options: {
     maxPayload: 1048576,
@@ -37,8 +51,25 @@ await fastify.register(async function (fastify) {
       message: 'Connexion WebSocket établie!'
     }))
 
-    socket.on('message', message => {
+    // Chaos: Déconnexion aléatoire périodique
+    const chaosInterval = setInterval(() => {
+      if (chaosConfig.enabled && Math.random() < chaosConfig.randomDisconnectProbability) {
+        console.log('Chaos: Déconnexion forcée du client');
+        socket.close(1000, 'Chaos engineering: random disconnect');
+      }
+    }, 5000);
+
+    socket.on('message', async (message) => {
       try {
+        if (chaosConfig.enabled) {
+          await randomDelay();
+        }
+
+        if (chaosConfig.enabled && Math.random() < chaosConfig.errorProbability) {
+          console.log('Chaos: Génération d\'une erreur');
+          throw new Error('Chaos engineering: random error');
+        }
+
         const data = JSON.parse(message.toString())
         console.log('Message reçu:', data)
         
@@ -49,11 +80,17 @@ await fastify.register(async function (fastify) {
         }))
       } catch (error) {
         console.error('Erreur:', error)
+        socket.send(JSON.stringify({
+          type: 'error',
+          serverId: SERVER_ID,
+          message: `Erreur: ${error.message}`
+        }))
       }
     })
 
     socket.on('close', () => {
       console.log('Client déconnecté')
+      clearInterval(chaosInterval);
     })
   })
 })
