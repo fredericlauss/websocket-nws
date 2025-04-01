@@ -1,4 +1,8 @@
 const fastify = require('fastify')()
+const { v4: uuidv4 } = require('uuid')
+
+const SERVER_ID = uuidv4()
+console.log(`Instance du serveur démarrée avec l'ID: ${SERVER_ID}`)
 
 fastify.register(require('@fastify/websocket'), {
   options: {
@@ -20,6 +24,13 @@ fastify.register(async function (fastify) {
   fastify.get('/', { websocket: true }, (socket, req) => {
     console.log('Client connecté')
     
+    // Envoyer immédiatement l'ID du serveur au client
+    socket.send(JSON.stringify({
+      type: 'server_info',
+      serverId: SERVER_ID,
+      message: 'Connexion WebSocket établie!'
+    }))
+
     socket.on('message', message => {
       try {
         const data = JSON.parse(message.toString())
@@ -27,7 +38,8 @@ fastify.register(async function (fastify) {
         
         socket.send(JSON.stringify({
           type: 'response',
-          message: `Serveur a reçu: ${data.message}`
+          serverId: SERVER_ID,
+          message: `Serveur ${SERVER_ID} a reçu: ${data.message}`
         }))
       } catch (error) {
         console.error('Erreur:', error)
@@ -37,11 +49,6 @@ fastify.register(async function (fastify) {
     socket.on('close', () => {
       console.log('Client déconnecté')
     })
-
-    socket.send(JSON.stringify({
-      type: 'welcome',
-      message: 'Connexion WebSocket établie!'
-    }))
   })
 })
 

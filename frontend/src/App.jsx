@@ -5,6 +5,7 @@ function App() {
   const [count, setCount] = useState(0)
   const [socket, setSocket] = useState(null)
   const [messages, setMessages] = useState([])
+  const [serverId, setServerId] = useState(null)
 
   useEffect(() => {
     const ws = new WebSocket('ws://localhost:3000/')
@@ -16,11 +17,15 @@ function App() {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data)
-      setMessages(prev => [...prev, data.message])
+      if (data.type === 'server_info') {
+        setServerId(data.serverId)
+      }
+      setMessages(prev => [...prev, `${data.message}`])
     }
 
     ws.onclose = () => {
       console.log('Déconnecté du serveur WebSocket')
+      setServerId(null)
     }
 
     return () => {
@@ -42,6 +47,11 @@ function App() {
   return (
     <>
       <h1>Vite + React + WebSocket</h1>
+      {serverId && (
+        <div className="server-info">
+          Connecté au serveur: {serverId}
+        </div>
+      )}
       <div className="card">
         <button onClick={() => setCount((count) => count + 1)}>
           count is {count}
