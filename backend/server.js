@@ -15,6 +15,11 @@ await fastify.register(websocket, {
     const server = fastify.websocketServer
     
     for (const client of server.clients) {
+      client.send(JSON.stringify({
+        type: 'shutdown',
+        serverId: SERVER_ID,
+        message: 'Server shutting down gracefully'
+      }))
       client.close(1000, 'Server shutting down gracefully')
     }
     
