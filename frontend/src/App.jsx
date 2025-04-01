@@ -6,31 +6,55 @@ function App() {
   const [socket, setSocket] = useState(null)
   const [messages, setMessages] = useState([])
   const [serverId, setServerId] = useState(null)
+  const [isConnecting, setIsConnecting] = useState(false)
 
-  useEffect(() => {
-    const ws = new WebSocket('ws://localhost:3000/')
+  const connectWebSocket = () => {
+    if (isConnecting) return;
+    
+    setIsConnecting(true);
+    const ws = new WebSocket('ws://localhost:3000/');
 
     ws.onopen = () => {
-      console.log('Connecté au serveur WebSocket')
-      setSocket(ws)
+      console.log('Connecté au serveur WebSocket');
+      setSocket(ws);
+      setIsConnecting(false);
     }
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data)
+      const data = JSON.parse(event.data);
       if (data.type === 'server_info') {
-        setServerId(data.serverId)
+        setServerId(data.serverId);
+      } else if (data.type === 'shutdown') {
+        setMessages(prev => [...prev, 'Le serveur s\'arrête...']);
       }
-      setMessages(prev => [...prev, `${data.message}`])
+      setMessages(prev => [...prev, `${data.message}`]);
     }
 
     ws.onclose = () => {
-      console.log('Déconnecté du serveur WebSocket')
-      setServerId(null)
+      console.log('Déconnecté du serveur WebSocket');
+      setSocket(null);
+      setServerId(null);
+      setIsConnecting(false);
+      
+      // Tentative de reconnexion après 3 secondes
+      setTimeout(() => {
+        console.log('Tentative de reconnexion...');
+        connectWebSocket();
+      }, 3000);
     }
 
+    ws.onerror = (error) => {
+      console.error('Erreur WebSocket:', error);
+      ws.close();
+    }
+  }
+
+  useEffect(() => {
+    connectWebSocket();
+
     return () => {
-      if (ws) {
-        ws.close()
+      if (socket) {
+        socket.close();
       }
     }
   }, [])
