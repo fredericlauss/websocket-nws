@@ -1,10 +1,12 @@
-const fastify = require('fastify')()
-const { v4: uuidv4 } = require('uuid')
+import Fastify from 'fastify'
+import websocket from '@fastify/websocket'
+import { v4 as uuidv4 } from 'uuid'
 
+const fastify = Fastify()
 const SERVER_ID = uuidv4()
 console.log(`Instance du serveur démarrée avec l'ID: ${SERVER_ID}`)
 
-fastify.register(require('@fastify/websocket'), {
+await fastify.register(websocket, {
   options: {
     maxPayload: 1048576,
     clientTracking: true
@@ -20,11 +22,10 @@ fastify.register(require('@fastify/websocket'), {
   }
 })
 
-fastify.register(async function (fastify) {
+await fastify.register(async function (fastify) {
   fastify.get('/', { websocket: true }, (socket, req) => {
     console.log('Client connecté')
     
-    // Envoyer immédiatement l'ID du serveur au client
     socket.send(JSON.stringify({
       type: 'server_info',
       serverId: SERVER_ID,
