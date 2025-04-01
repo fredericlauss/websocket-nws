@@ -1,16 +1,22 @@
 const fastify = require('fastify')()
 
-// Enregistrement du plugin WebSocket
 fastify.register(require('@fastify/websocket'), {
   options: {
     maxPayload: 1048576,
     clientTracking: true
+  },
+  preClose: async (done) => {
+    const server = fastify.websocketServer
+    
+    for (const client of server.clients) {
+      client.close(1000, 'Server shutting down gracefully')
+    }
+    
+    server.close(done)
   }
 })
 
-// Enregistrement des routes dans un plugin séparé
 fastify.register(async function (fastify) {
-  // Route WebSocket simple
   fastify.get('/', { websocket: true }, (socket, req) => {
     console.log('Client connecté')
     
@@ -32,7 +38,6 @@ fastify.register(async function (fastify) {
       console.log('Client déconnecté')
     })
 
-    // Message de bienvenue
     socket.send(JSON.stringify({
       type: 'welcome',
       message: 'Connexion WebSocket établie!'
@@ -40,7 +45,31 @@ fastify.register(async function (fastify) {
   })
 })
 
-// Démarrage du serveur
+const gracefulShutdown = async (signal) => {
+  console.log(`\n${signal} signal reçu. Début de l'arrêt gracieux...`)
+
+  try {
+    await fastify.close()
+    console.log('Serveur arrêté avec succès')
+    process.exit(0)
+  } catch (err) {
+    console.error('Erreur pendant l\'arrêt du serveur:', err)
+    process.exit(1)
+  }
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Promesse non gérée:', reason)
+})
+
+process.on('uncaughtException', (error) => {
+  console.error('Exception non capturée:', error)
+  gracefulShutdown('UNCAUGHT_EXCEPTION')
+})
+
 const start = async () => {
   try {
     await fastify.listen({ port: 3000 })
