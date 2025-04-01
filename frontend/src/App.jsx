@@ -7,6 +7,7 @@ function App() {
   const [messages, setMessages] = useState([])
   const [serverId, setServerId] = useState(null)
   const [isConnecting, setIsConnecting] = useState(false)
+  const [lastServerId, setLastServerId] = useState(null)
 
   const connectWebSocket = () => {
     if (isConnecting) return;
@@ -23,6 +24,12 @@ function App() {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'server_info') {
+        if (lastServerId && lastServerId === data.serverId) {
+          console.log('Reconnexion à la même instance du serveur, fermeture...');
+          ws.close();
+          return;
+        }
+        setLastServerId(serverId);
         setServerId(data.serverId);
       } else if (data.type === 'shutdown') {
         setMessages(prev => [...prev, 'Le serveur s\'arrête...']);
