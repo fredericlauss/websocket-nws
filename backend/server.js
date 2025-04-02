@@ -20,6 +20,93 @@ const randomDelay = () => {
   });
 }
 
+const TAGS = {
+  MESSAGE_TYPE: 1,    // Pour le type de message (response, error, etc.)
+  CONTENT: 2,        // Pour le contenu du message
+  SERVER_ID: 3,      // Pour l'ID du serveur
+};
+
+const encodeTLV = (data) => {
+  let chunks = [];
+  
+  // Encoder le type de message
+  if (data.type) {
+    const typeBuffer = new TextEncoder().encode(data.type);
+    const typeChunk = new Uint8Array(1 + 4 + typeBuffer.length);
+    typeChunk[0] = TAGS.MESSAGE_TYPE;
+    const typeDv = new DataView(typeChunk.buffer);
+    typeDv.setUint32(1, typeBuffer.length, false);
+    typeChunk.set(typeBuffer, 5);
+    chunks.push(typeChunk);
+  }
+
+  // Encoder le contenu
+  if (data.message) {
+    const contentBuffer = new TextEncoder().encode(data.message);
+    const contentChunk = new Uint8Array(1 + 4 + contentBuffer.length);
+    contentChunk[0] = TAGS.CONTENT;
+    const contentDv = new DataView(contentChunk.buffer);
+    contentDv.setUint32(1, contentBuffer.length, false);
+    contentChunk.set(contentBuffer, 5);
+    chunks.push(contentChunk);
+  }
+
+  // Encoder le serverId
+  if (data.serverId) {
+    const serverIdBuffer = new TextEncoder().encode(data.serverId);
+    const serverIdChunk = new Uint8Array(1 + 4 + serverIdBuffer.length);
+    serverIdChunk[0] = TAGS.SERVER_ID;
+    const serverIdDv = new DataView(serverIdChunk.buffer);
+    serverIdDv.setUint32(1, serverIdBuffer.length, false);
+    serverIdChunk.set(serverIdBuffer, 5);
+    chunks.push(serverIdChunk);
+  }
+
+  // Calculer la taille totale
+  const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+  const finalBuffer = new Uint8Array(totalLength);
+  
+  // Combiner tous les chunks
+  let offset = 0;
+  for (const chunk of chunks) {
+    finalBuffer.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return finalBuffer;
+}
+
+const decodeTLV = (buffer) => {
+  const result = {};
+  let offset = 0;
+
+  while (offset < buffer.length) {
+    const tag = buffer[offset];
+    const dv = new DataView(buffer.buffer, offset + 1);
+    const length = dv.getUint32(0, false);
+    const value = new TextDecoder().decode(
+      buffer.slice(offset + 5, offset + 5 + length)
+    );
+
+    switch (tag) {
+      case TAGS.MESSAGE_TYPE:
+        result.type = value;
+        break;
+      case TAGS.CONTENT:
+        result.message = value;
+        break;
+      case TAGS.SERVER_ID:
+        result.serverId = value;
+        break;
+    }
+
+    offset += 5 + length;
+  }
+
+  result.rawBuffer = Array.from(buffer);
+  return result;
+}
+
 await fastify.register(websocket, {
   options: {
     maxPayload: 1048576,
@@ -29,12 +116,13 @@ await fastify.register(websocket, {
     const server = fastify.websocketServer
     
     for (const client of server.clients) {
-      client.send(JSON.stringify({
+      const shutdownMessage = encodeTLV({
         type: 'shutdown',
         serverId: SERVER_ID,
         message: 'Server shutting down gracefully'
-      }))
-      client.close(1000, 'Server shutting down gracefully')
+      });
+      client.send(shutdownMessage);
+      client.close(1000, 'Server shutting down gracefully');
     }
     
     server.close(done)
@@ -45,16 +133,22 @@ await fastify.register(async function (fastify) {
   fastify.get('/', { websocket: true }, (socket, req) => {
     console.log('Client connecté')
     
-    socket.send(JSON.stringify({
+    const serverInfo = encodeTLV({
       type: 'server_info',
       serverId: SERVER_ID,
       message: 'Connexion WebSocket établie!'
-    }))
+    });
+    socket.send(serverInfo);
 
     // Chaos: Déconnexion aléatoire périodique
     const chaosInterval = setInterval(() => {
       if (chaosConfig.enabled && Math.random() < chaosConfig.randomDisconnectProbability) {
         console.log('Chaos: Déconnexion forcée du client');
+        const chaosMessage = encodeTLV({
+          type: 'chaos',
+          message: 'Déconnexion forcée'
+        });
+        socket.send(chaosMessage);
         socket.close(1000, 'Chaos engineering: random disconnect');
       }
     }, 5000);
@@ -70,21 +164,24 @@ await fastify.register(async function (fastify) {
           throw new Error('Chaos engineering: random error');
         }
 
-        const data = JSON.parse(message.toString())
-        console.log('Message reçu:', data)
+        const decoded = decodeTLV(new Uint8Array(message));
+        console.log('Message reçu:', decoded);
         
-        socket.send(JSON.stringify({
+        const response = encodeTLV({
           type: 'response',
           serverId: SERVER_ID,
-          message: `Serveur ${SERVER_ID} a reçu: ${data.message}`
-        }))
+          message: `Serveur ${SERVER_ID} a reçu: ${decoded.message}`
+        });
+        
+        socket.send(response);
       } catch (error) {
-        console.error('Erreur:', error)
-        socket.send(JSON.stringify({
+        console.error('Erreur:', error);
+        const errorResponse = encodeTLV({
           type: 'error',
           serverId: SERVER_ID,
           message: `Erreur: ${error.message}`
-        }))
+        });
+        socket.send(errorResponse);
       }
     })
 
